@@ -1,0 +1,714 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Aurora — 3D WebGL Experience</title>
+<meta name="description" content="An interactive 3D WebGL galaxy built with Three.js, controllable with your hands.">
+<style>
+  :root { color-scheme: dark; --pad: clamp(18px, 4vw, 44px); }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: #03030a; overflow: hidden; font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; color: #fff; }
+  canvas#bg { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  .vignette { position: fixed; inset: 0; pointer-events: none;
+    background: radial-gradient(ellipse at center, transparent 45%, rgba(3,3,10,.75) 100%); }
+  .ui { position: fixed; inset: 0; pointer-events: none; display: flex; flex-direction: column;
+    justify-content: space-between; padding: var(--pad); }
+  nav { display: flex; justify-content: space-between; align-items: center; opacity: 0; animation: fade 1.6s .6s forwards; }
+  .logo { font-weight: 600; letter-spacing: .32em; font-size: 12px; text-transform: uppercase; }
+  .logo i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 10px;
+    background: linear-gradient(135deg,#ff7ad9,#4cc9ff); box-shadow: 0 0 14px #ff7ad9; }
+  .hero { text-align: center; margin-bottom: 15vh; transition: opacity .6s, transform .6s; }
+  body.hand-on .hero { opacity: .0; transform: translateY(10px); pointer-events: none; }
+  .eyebrow { font-size: 12px; letter-spacing: .5em; text-transform: uppercase; color: rgba(255,255,255,.55);
+    opacity: 0; animation: rise 1.4s 1s forwards; }
+  h1 { font-weight: 200; font-size: clamp(44px, 10vw, 118px); line-height: 1; letter-spacing: -.02em; margin: 14px 0 18px;
+    background: linear-gradient(100deg,#fff 10%,#ffb3ec 40%,#8fdcff 70%,#fff 95%); background-size: 200% 100%;
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    opacity: 0; animation: rise 1.6s 1.2s forwards, shimmer 8s 3s linear infinite; text-shadow: 0 0 60px rgba(255,122,217,.25); }
+  .sub { max-width: 540px; margin: 0 auto 28px; color: rgba(255,255,255,.62); font-weight: 300; line-height: 1.6;
+    font-size: clamp(14px, 2vw, 17px); opacity: 0; animation: rise 1.6s 1.5s forwards; }
+  .cta { pointer-events: auto; display: inline-block; text-decoration: none; color: #fff; font-size: 14px; letter-spacing: .12em;
+    text-transform: uppercase; padding: 15px 34px; border-radius: 99px; position: relative; font-family: inherit; cursor: pointer;
+    background: linear-gradient(120deg, rgba(255,122,217,.28), rgba(76,201,255,.28));
+    border: 1px solid rgba(255,255,255,.28); backdrop-filter: blur(12px);
+    box-shadow: 0 0 40px rgba(255,122,217,.25), inset 0 0 20px rgba(255,255,255,.06);
+    opacity: 0; animation: rise 1.6s 1.8s forwards; transition: transform .3s, box-shadow .3s; }
+  .cta:hover { transform: translateY(-3px) scale(1.03); box-shadow: 0 0 60px rgba(76,201,255,.45), inset 0 0 24px rgba(255,255,255,.1); }
+  .hint { position: absolute; left: 0; right: 0; bottom: clamp(14px, 3vw, 28px); text-align: center; font-size: 11px;
+    letter-spacing: .3em; text-transform: uppercase; color: rgba(255,255,255,.35); opacity: 0; animation: fade 2s 2.6s forwards; }
+  .controls { position: absolute; left: 0; right: 0; bottom: clamp(38px, 5vw, 58px); display: flex; gap: 8px; flex-wrap: wrap;
+    justify-content: center; padding: 0 12px; pointer-events: none; opacity: 0; animation: fade 1.6s 2.4s forwards; }
+  .chip { pointer-events: auto; font: inherit; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: rgba(255,255,255,.65);
+    background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.16); border-radius: 99px; padding: 9px 16px;
+    cursor: pointer; backdrop-filter: blur(10px); transition: .25s; }
+  .chip:hover { color: #fff; border-color: rgba(255,255,255,.45); background: rgba(255,255,255,.1); }
+  .chip.active { color: #fff; border-color: rgba(143,220,255,.7); background: linear-gradient(120deg, rgba(255,122,217,.25), rgba(76,201,255,.25));
+    box-shadow: 0 0 18px rgba(76,201,255,.3); }
+  .sep { width: 1px; background: rgba(255,255,255,.15); margin: 0 4px; }
+
+  /* hand control panel */
+  .hand-panel { position: absolute; top: calc(var(--pad) + 40px); right: var(--pad); width: 200px; pointer-events: none;
+    border-radius: 16px; overflow: hidden; background: rgba(8,8,20,.55); backdrop-filter: blur(14px);
+    border: 1px solid rgba(255,255,255,.14); box-shadow: 0 10px 40px rgba(0,0,0,.45);
+    opacity: 0; transform: translateY(-8px) scale(.97); transition: .5s; visibility: hidden; }
+  body.hand-panel-on .hand-panel { opacity: 1; transform: none; visibility: visible; }
+  .hv { position: relative; aspect-ratio: 4 / 3; background: #000; transform: scaleX(-1); }
+  .hv video, .hv canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .hv video { opacity: .55; filter: saturate(.7) contrast(1.05); }
+  .hstatus { padding: 10px 12px 4px; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: rgba(255,255,255,.85); }
+  .hstatus b { color: #8fdcff; font-weight: 600; }
+  .legend { padding: 4px 12px 12px; font-size: 11px; line-height: 1.7; color: rgba(255,255,255,.5); }
+  .legend span { color: rgba(255,255,255,.85); }
+  .privacy { padding: 0 12px 10px; font-size: 10px; color: rgba(255,255,255,.35); }
+  #hcursor { position: fixed; left: 0; top: 0; width: 34px; height: 34px; margin: -17px 0 0 -17px; border-radius: 50%; pointer-events: none;
+    border: 2px solid rgba(255,255,255,.85); box-shadow: 0 0 22px rgba(143,220,255,.7), inset 0 0 12px rgba(143,220,255,.4);
+    opacity: 0; transition: opacity .3s, border-color .2s, background .2s, width .2s, height .2s, margin .2s; z-index: 4; will-change: transform; }
+  #hcursor.show { opacity: 1; }
+  #hcursor.grab { border-color: #ff7ad9; background: rgba(255,122,217,.3); box-shadow: 0 0 30px rgba(255,122,217,.8); width: 22px; height: 22px; margin: -11px 0 0 -11px; }
+  #hcursor.pinch { border-color: #4cc9ff; background: rgba(76,201,255,.35); }
+  #hcursor.zoom { border-style: dashed; width: 48px; height: 48px; margin: -24px 0 0 -24px; }
+
+  #loader { position: fixed; inset: 0; display: grid; place-items: center; background: #03030a; z-index: 5;
+    transition: opacity 1.2s ease, visibility 1.2s; font-size: 11px; letter-spacing: .5em; text-transform: uppercase; color: rgba(255,255,255,.5); }
+  #loader.done { opacity: 0; visibility: hidden; }
+  #nogl { display: none; position: fixed; inset: 0; place-items: center; text-align: center; padding: 30px; z-index: 6; background: #03030a; }
+  @media (max-width: 640px) {
+    .chip { padding: 8px 12px; font-size: 10px; }
+    .hand-panel { width: 130px; }
+    .legend, .privacy { display: none; }
+  }
+  @keyframes fade { to { opacity: 1; } }
+  @keyframes rise { from { opacity: 0; transform: translateY(26px); filter: blur(8px);} to { opacity: 1; transform: none; filter: blur(0);} }
+  @keyframes shimmer { to { background-position: -200% 0; } }
+  @media (prefers-reduced-motion: reduce) { * { animation-duration: .01s !important; animation-delay: 0s !important; } }
+</style>
+</head>
+<body>
+<div id="loader">Loading</div>
+<div id="nogl"><p>WebGL isn't available in this browser.<br>Try a recent version of Chrome, Firefox, Safari or Edge.</p></div>
+<canvas id="bg"></canvas>
+<div class="vignette"></div>
+<div id="hcursor"></div>
+
+<div class="ui">
+  <nav>
+    <div class="logo"><i></i>Aurora</div>
+  </nav>
+
+  <div class="hand-panel" id="handPanel">
+    <div class="hv">
+      <video id="handVideo" playsinline muted></video>
+      <canvas id="handCanvas"></canvas>
+    </div>
+    <div class="hstatus" id="handStatus">Starting…</div>
+    <div class="legend">
+      <span>✊ Fist</span> drag to rotate, push / pull to zoom<br>
+      <span>🙌 Two open hands</span> spread to zoom<br>
+      <span>🤏 Pinch</span> send a pulse
+    </div>
+    <div class="privacy">Video stays on your device.</div>
+  </div>
+
+  <div class="hero">
+    <div class="eyebrow">An interactive universe</div>
+    <h1>Aurora</h1>
+    <p class="sub">A living galaxy rendered in real time with WebGL. Drag to orbit, scroll to zoom, or switch on your webcam and steer it with your hands.</p>
+    <button class="cta" id="handCta" type="button">✋ Enable hand control</button>
+  </div>
+
+  <div class="controls">
+    <button class="chip" data-view="overview" type="button">Overview</button>
+    <button class="chip" data-view="edge" type="button">Edge-on</button>
+    <button class="chip" data-view="top" type="button">Top</button>
+    <button class="chip" data-view="core" type="button">Core</button>
+    <span class="sep"></span>
+    <button class="chip" id="btnRotate" type="button">Auto-rotate</button>
+    <button class="chip" id="btnHand" type="button">✋ Hand</button>
+  </div>
+  <div class="hint">Drag · Scroll · Click · Keys 1–4, R, H</div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const canvas = document.getElementById('bg');
+const loader = document.getElementById('loader');
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const isMobile = Math.min(innerWidth, innerHeight) < 640;
+
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+} catch (e) {
+  loader.style.display = 'none';
+  document.getElementById('nogl').style.display = 'grid';
+  throw e;
+}
+const DPR = Math.min(devicePixelRatio || 1, 2);
+renderer.setPixelRatio(DPR);
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x03030a, 0.018);
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 300);
+camera.position.set(0, 2, 22);
+
+/* ---------- GLSL: simplex noise ---------- */
+const noiseGLSL = /* glsl */`
+vec3 mod289(vec3 x){return x-floor(x*(1.0/289.0))*289.0;}
+vec4 mod289(vec4 x){return x-floor(x*(1.0/289.0))*289.0;}
+vec4 permute(vec4 x){return mod289(((x*34.0)+1.0)*x);}
+vec4 taylorInvSqrt(vec4 r){return 1.79284291400159-0.85373472095314*r;}
+float snoise(vec3 v){
+  const vec2 C=vec2(1.0/6.0,1.0/3.0); const vec4 D=vec4(0.0,0.5,1.0,2.0);
+  vec3 i=floor(v+dot(v,C.yyy)); vec3 x0=v-i+dot(i,C.xxx);
+  vec3 g=step(x0.yzx,x0.xyz); vec3 l=1.0-g; vec3 i1=min(g.xyz,l.zxy); vec3 i2=max(g.xyz,l.zxy);
+  vec3 x1=x0-i1+C.xxx; vec3 x2=x0-i2+C.yyy; vec3 x3=x0-D.yyy;
+  i=mod289(i);
+  vec4 p=permute(permute(permute(i.z+vec4(0.0,i1.z,i2.z,1.0))+i.y+vec4(0.0,i1.y,i2.y,1.0))+i.x+vec4(0.0,i1.x,i2.x,1.0));
+  float n_=0.142857142857; vec3 ns=n_*D.wyz-D.xzx;
+  vec4 j=p-49.0*floor(p*ns.z*ns.z); vec4 x_=floor(j*ns.z); vec4 y_=floor(j-7.0*x_);
+  vec4 x=x_*ns.x+ns.yyyy; vec4 y=y_*ns.x+ns.yyyy; vec4 h=1.0-abs(x)-abs(y);
+  vec4 b0=vec4(x.xy,y.xy); vec4 b1=vec4(x.zw,y.zw);
+  vec4 s0=floor(b0)*2.0+1.0; vec4 s1=floor(b1)*2.0+1.0; vec4 sh=-step(h,vec4(0.0));
+  vec4 a0=b0.xzyw+s0.xzyw*sh.xxyy; vec4 a1=b1.xzyw+s1.xzyw*sh.zzww;
+  vec3 p0=vec3(a0.xy,h.x); vec3 p1=vec3(a0.zw,h.y); vec3 p2=vec3(a1.xy,h.z); vec3 p3=vec3(a1.zw,h.w);
+  vec4 norm=taylorInvSqrt(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3)));
+  p0*=norm.x; p1*=norm.y; p2*=norm.z; p3*=norm.w;
+  vec4 m=max(0.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.0); m=m*m;
+  return 42.0*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
+}`;
+
+/* ---------- Galaxy ---------- */
+const galaxy = new THREE.Group();
+galaxy.rotation.x = 0.42;
+scene.add(galaxy);
+
+(function buildGalaxy() {
+  const count = isMobile ? 60000 : 140000;
+  const branches = 5, radius = 11, spin = 1.15, randomness = 0.42;
+  const pos = new Float32Array(count * 3);
+  const col = new Float32Array(count * 3);
+  const scl = new Float32Array(count);
+  const rnd = new Float32Array(count * 3);
+  const inner = new THREE.Color('#ff6ad5'), mid = new THREE.Color('#a78bfa'),
+        outer = new THREE.Color('#38bdf8'), gold = new THREE.Color('#ffd89a');
+  const c = new THREE.Color();
+  for (let i = 0; i < count; i++) {
+    const r = Math.pow(Math.random(), 1.7) * radius + 0.4;
+    const branch = ((i % branches) / branches) * Math.PI * 2;
+    const a = branch + r * spin;
+    const rx = Math.pow(Math.random(), 3) * (Math.random() < .5 ? 1 : -1) * randomness * r;
+    const ry = Math.pow(Math.random(), 3) * (Math.random() < .5 ? 1 : -1) * randomness * r * 0.35;
+    const rz = Math.pow(Math.random(), 3) * (Math.random() < .5 ? 1 : -1) * randomness * r;
+    pos[i*3] = Math.cos(a) * r + rx;
+    pos[i*3+1] = ry;
+    pos[i*3+2] = Math.sin(a) * r + rz;
+    const t = r / radius;
+    if (t < .5) c.copy(inner).lerp(mid, t * 2); else c.copy(mid).lerp(outer, (t - .5) * 2);
+    if (r < 2.2 && Math.random() < .5) c.lerp(gold, .6);
+    col[i*3] = c.r; col[i*3+1] = c.g; col[i*3+2] = c.b;
+    scl[i] = 0.4 + Math.random() * Math.random() * 2.2;
+    rnd[i*3] = Math.random(); rnd[i*3+1] = Math.random(); rnd[i*3+2] = Math.random();
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.setAttribute('aScale', new THREE.BufferAttribute(scl, 1));
+  g.setAttribute('aRandom', new THREE.BufferAttribute(rnd, 3));
+  const m = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, vertexColors: true,
+    uniforms: { uTime: { value: 0 }, uSize: { value: 38 * DPR }, uPulse: { value: 0 } },
+    vertexShader: /* glsl */`
+      uniform float uTime, uSize, uPulse;
+      attribute float aScale; attribute vec3 aRandom;
+      varying vec3 vColor; varying float vTw;
+      void main(){
+        vec3 p = position;
+        float r = length(p.xz);
+        float ang = atan(p.z, p.x) + uTime * 0.22 / (0.6 + r * 0.35);
+        p.x = cos(ang) * r; p.z = sin(ang) * r;
+        p.y += sin(uTime * 0.6 + r * 1.8 + aRandom.x * 6.2831) * 0.07;
+        // pulse shockwave travelling outwards
+        float wave = exp(-pow((r - uPulse * 14.0) * 0.9, 2.0)) * step(0.001, uPulse) * (1.0 - uPulse);
+        p.y += wave * (aRandom.y - 0.5) * 3.0;
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        gl_Position = projectionMatrix * mv;
+        vTw = 0.65 + 0.35 * sin(uTime * (1.0 + aRandom.z * 3.0) + aRandom.x * 40.0);
+        gl_PointSize = aScale * uSize * (1.0 + wave * 2.0) * (1.0 / -mv.z);
+        vColor = color * (1.0 + wave * 2.5);
+      }`,
+    fragmentShader: /* glsl */`
+      varying vec3 vColor; varying float vTw;
+      void main(){
+        float d = length(gl_PointCoord - 0.5);
+        if (d > 0.5) discard;
+        float a = pow(1.0 - d * 2.0, 2.6);
+        gl_FragColor = vec4(vColor * vTw, a);
+      }`
+  });
+  const pts = new THREE.Points(g, m);
+  pts.frustumCulled = false;
+  galaxy.add(pts);
+  galaxy.userData.mat = m;
+})();
+
+/* ---------- Core (noise-morphing iridescent orb) ---------- */
+const coreMat = new THREE.ShaderMaterial({
+  uniforms: { uTime: { value: 0 }, uPulse: { value: 0 } },
+  vertexShader: /* glsl */`
+    ${noiseGLSL}
+    uniform float uTime, uPulse;
+    varying vec3 vNormal, vView; varying float vNoise;
+    void main(){
+      float n  = snoise(position * 1.15 + vec3(0.0, uTime * 0.28, uTime * 0.12));
+      float n2 = snoise(position * 3.1 - uTime * 0.45);
+      float disp = n * 0.38 + n2 * 0.09 + uPulse * 0.22 * sin(position.y * 6.0 - uTime * 10.0);
+      vec3 p = position + normal * disp;
+      vNoise = n;
+      vNormal = normalize(normalMatrix * normal);
+      vec4 mv = modelViewMatrix * vec4(p, 1.0);
+      vView = -mv.xyz;
+      gl_Position = projectionMatrix * mv;
+    }`,
+  fragmentShader: /* glsl */`
+    uniform float uTime, uPulse;
+    varying vec3 vNormal, vView; varying float vNoise;
+    vec3 pal(float t){ return 0.5 + 0.5 * cos(6.28318 * (t + vec3(0.0, 0.33, 0.67))); }
+    void main(){
+      vec3 N = normalize(vNormal), V = normalize(vView);
+      float fres = pow(1.0 - max(dot(N, V), 0.0), 2.4);
+      vec3 irid = pal(vNoise * 0.6 + fres * 0.9 + uTime * 0.06);
+      vec3 base = vec3(0.04, 0.02, 0.12);
+      vec3 col = mix(base, irid, 0.22 + fres * 0.9);
+      col += irid * fres * (1.4 + uPulse * 2.0);
+      col += vec3(1.0, 0.75, 0.95) * pow(max(dot(N, normalize(vec3(0.5, 0.8, 0.6))), 0.0), 24.0) * 0.6;
+      gl_FragColor = vec4(col, 1.0);
+    }`
+});
+const core = new THREE.Mesh(new THREE.IcosahedronGeometry(1.35, isMobile ? 48 : 96), coreMat);
+scene.add(core);
+
+// glow halo
+const halo = new THREE.Mesh(
+  new THREE.SphereGeometry(2.1, 48, 48),
+  new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.BackSide,
+    uniforms: { uTime: { value: 0 } },
+    vertexShader: `varying vec3 vN, vV; void main(){ vN = normalize(normalMatrix*normal); vec4 mv = modelViewMatrix*vec4(position,1.); vV = -mv.xyz; gl_Position = projectionMatrix*mv; }`,
+    fragmentShader: `uniform float uTime; varying vec3 vN, vV;
+      void main(){ float f = pow(max(dot(normalize(vN), normalize(vV)), 0.0), 3.0);
+      vec3 c = mix(vec3(1.0,0.35,0.85), vec3(0.3,0.8,1.0), 0.5 + 0.5*sin(uTime*0.4));
+      gl_FragColor = vec4(c * f * 0.55, f * 0.55); }`
+  })
+);
+scene.add(halo);
+
+// wireframe shell
+const shell = new THREE.Mesh(
+  new THREE.IcosahedronGeometry(2.35, 2),
+  new THREE.MeshBasicMaterial({ color: 0x9fdcff, wireframe: true, transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false })
+);
+scene.add(shell);
+
+/* ---------- Orbiting rings with orbs ---------- */
+const rings = [];
+const ringDefs = [
+  { r: 3.3, tilt: [1.2, 0.2, 0], color: 0xff7ad9, speed: 0.55 },
+  { r: 4.2, tilt: [0.5, 0, 0.9], color: 0x4cc9ff, speed: -0.38 },
+  { r: 5.1, tilt: [-0.9, 0.6, 0.2], color: 0xffd89a, speed: 0.28 },
+];
+ringDefs.forEach(d => {
+  const g = new THREE.Group();
+  g.rotation.set(...d.tilt);
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(d.r, 0.012, 8, 256),
+    new THREE.MeshBasicMaterial({ color: d.color, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false })
+  );
+  const pivot = new THREE.Group();
+  const orb = new THREE.Mesh(new THREE.SphereGeometry(0.12, 24, 24), new THREE.MeshBasicMaterial({ color: new THREE.Color(d.color).multiplyScalar(3.0) }));
+  orb.position.x = d.r;
+  const glow = new THREE.Mesh(new THREE.SphereGeometry(0.3, 24, 24),
+    new THREE.MeshBasicMaterial({ color: d.color, transparent: true, opacity: 0.18, blending: THREE.AdditiveBlending, depthWrite: false }));
+  orb.add(glow);
+  pivot.add(orb);
+  g.add(ring, pivot);
+  scene.add(g);
+  rings.push({ pivot, speed: d.speed, group: g });
+});
+
+/* ---------- Deep-space star field ---------- */
+(function stars() {
+  const n = isMobile ? 2500 : 6000;
+  const p = new Float32Array(n * 3), c = new Float32Array(n * 3);
+  const col = new THREE.Color();
+  for (let i = 0; i < n; i++) {
+    const r = 40 + Math.random() * 90;
+    const th = Math.random() * Math.PI * 2, ph = Math.acos(2 * Math.random() - 1);
+    p[i*3] = r * Math.sin(ph) * Math.cos(th);
+    p[i*3+1] = r * Math.cos(ph);
+    p[i*3+2] = r * Math.sin(ph) * Math.sin(th);
+    col.setHSL(0.55 + Math.random() * 0.25, 0.6, 0.6 + Math.random() * 0.4);
+    c[i*3] = col.r; c[i*3+1] = col.g; c[i*3+2] = col.b;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(p, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(c, 3));
+  const m = new THREE.PointsMaterial({ size: 0.32, sizeAttenuation: true, vertexColors: true, transparent: true, opacity: 0.85, depthWrite: false, fog: false });
+  const s = new THREE.Points(g, m);
+  s.name = 'stars';
+  scene.add(s);
+})();
+
+/* ---------- Post-processing ---------- */
+const composer = new EffectComposer(renderer);
+composer.setPixelRatio(DPR);
+composer.setSize(innerWidth, innerHeight);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.95, 0.75, 0.08);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+/* ===== Camera control (mouse / touch) ===== */
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.055;
+controls.enablePan = false;
+controls.rotateSpeed = 0.55;
+controls.zoomSpeed = 0.7;
+controls.minDistance = 2.6;
+controls.maxDistance = 32;
+controls.autoRotateSpeed = 0.6;
+controls.enabled = false; // enabled after the intro fly-in
+let autoRot = !reduced;   // user preference; suspended while hands are steering
+controls.autoRotate = autoRot;
+
+const VIEWS = { overview: [0, 1.8, 8.5], edge: [11, 1.2, 0.6], top: [0.01, 14, 0.5], core: [0.3, 0.4, 3.9] };
+const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+let tween = null;
+function flyTo(pos, dur = 2.4, done) {
+  tween = { t: 0, dur, done, fp: camera.position.clone(), tp: new THREE.Vector3(...pos),
+            ft: controls.target.clone(), tt: new THREE.Vector3(0, 0, 0) };
+  controls.enabled = false;
+}
+
+const chips = [...document.querySelectorAll('[data-view]')];
+const btnRotate = document.getElementById('btnRotate');
+const btnHand = document.getElementById('btnHand');
+const handCta = document.getElementById('handCta');
+function setActive(v) { chips.forEach(c => c.classList.toggle('active', c.dataset.view === v)); }
+function goView(v) {
+  if (!VIEWS[v]) return;
+  setActive(v);
+  flyTo(VIEWS[v], 2.4, () => { controls.enabled = true; });
+}
+chips.forEach(c => c.addEventListener('click', () => goView(c.dataset.view)));
+function toggleRotate() { autoRot = !autoRot; btnRotate.classList.toggle('active', autoRot); }
+btnRotate.addEventListener('click', toggleRotate);
+btnRotate.classList.toggle('active', autoRot);
+controls.addEventListener('start', () => setActive(null));
+
+/* ===== Pulse ===== */
+let pulse = 0, pulseActive = false;
+function firePulse() { pulse = 0.0001; pulseActive = true; }
+let downAt = null;
+canvas.addEventListener('pointerdown', e => { downAt = [e.clientX, e.clientY]; });
+canvas.addEventListener('pointerup', e => {
+  if (downAt && Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) < 6) firePulse();
+  downAt = null;
+});
+
+/* ===== Hand tracking (MediaPipe Hands, runs locally in the browser) ===== */
+const MP_VER = '0.10.14';
+const MP_URL = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VER}`;
+const MP_MODEL = 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task';
+const CONNS = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+
+const hv = document.getElementById('handVideo');
+const hc = document.getElementById('handCanvas');
+const hctx = hc.getContext('2d');
+const hStatusEl = document.getElementById('handStatus');
+const hCursor = document.getElementById('hcursor');
+
+const HAND = {
+  on: false, loading: false, landmarker: null, stream: null, lastT: -1,
+  prev: null, prevDist: null, pinching: false, lastPulse: 0, engaged: false,
+  dTheta: 0, dPhi: 0, zoom: 1,
+  cx: 0.5, cy: 0.5, tx: innerWidth / 2, ty: innerHeight / 2, visible: false
+};
+const AR = 4 / 3;
+const setStatus = (html) => { hStatusEl.innerHTML = html; };
+const dist2 = (a, b) => Math.hypot((a.x - b.x) * AR, a.y - b.y);
+
+function syncHandUI() {
+  const on = HAND.on || HAND.loading;
+  document.body.classList.toggle('hand-panel-on', on);
+  document.body.classList.toggle('hand-on', HAND.on);
+  btnHand.classList.toggle('active', on);
+  handCta.textContent = HAND.on ? '✋ Hand control on' : (HAND.loading ? '✋ Starting…' : '✋ Enable hand control');
+}
+
+async function startHand() {
+  if (HAND.on || HAND.loading) return;
+  HAND.loading = true; syncHandUI();
+  setStatus('Starting camera…');
+  try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('Camera not supported in this browser (needs HTTPS).');
+    HAND.stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' }, audio: false });
+    hv.srcObject = HAND.stream;
+    await hv.play();
+    if (!HAND.landmarker) {
+      setStatus('Loading hand model…');
+      const { FilesetResolver, HandLandmarker } = await import(`${MP_URL}/vision_bundle.mjs`);
+      const fileset = await FilesetResolver.forVisionTasks(`${MP_URL}/wasm`);
+      const opts = d => ({
+        baseOptions: { modelAssetPath: MP_MODEL, delegate: d }, runningMode: 'VIDEO', numHands: 2,
+        minHandDetectionConfidence: 0.6, minHandPresenceConfidence: 0.5, minTrackingConfidence: 0.5
+      });
+      try { HAND.landmarker = await HandLandmarker.createFromOptions(fileset, opts('GPU')); }
+      catch (_) { HAND.landmarker = await HandLandmarker.createFromOptions(fileset, opts('CPU')); }
+    }
+    HAND.on = true; HAND.loading = false;
+    HAND.prev = null; HAND.prevDist = null; HAND.lastT = -1;
+    setStatus('Show your hand');
+  } catch (err) {
+    console.error(err);
+    HAND.loading = false;
+    stopStream();
+    const denied = err && (err.name === 'NotAllowedError' || err.name === 'SecurityError');
+    setStatus(denied ? 'Camera blocked — allow access and retry' : 'Could not start: ' + (err && err.message ? err.message : 'error'));
+    document.body.classList.add('hand-panel-on');
+    setTimeout(() => { if (!HAND.on && !HAND.loading) { document.body.classList.remove('hand-panel-on'); } }, 4500);
+  }
+  syncHandUI();
+}
+
+function stopStream() {
+  if (HAND.stream) { HAND.stream.getTracks().forEach(t => t.stop()); HAND.stream = null; }
+  hv.srcObject = null;
+}
+
+function stopHand() {
+  HAND.on = false; HAND.loading = false; HAND.engaged = false; HAND.visible = false;
+  HAND.prev = null; HAND.prevDist = null; HAND.dTheta = HAND.dPhi = 0; HAND.zoom = 1;
+  stopStream();
+  hctx.clearRect(0, 0, hc.width, hc.height);
+  hCursor.className = '';
+  syncHandUI();
+}
+function toggleHand() { (HAND.on || HAND.loading) ? stopHand() : startHand(); }
+btnHand.addEventListener('click', toggleHand);
+handCta.addEventListener('click', toggleHand);
+
+function analyse(lm) {
+  const wrist = lm[0];
+  let curled = 0;
+  [[8, 6], [12, 10], [16, 14], [20, 18]].forEach(([tip, pip]) => {
+    if (dist2(lm[tip], wrist) < dist2(lm[pip], wrist)) curled++;
+  });
+  const scale = dist2(lm[0], lm[9]);
+  const fist = curled >= 3;
+  const pinch = !fist && dist2(lm[4], lm[8]) < scale * 0.32;
+  return { lm, fist, pinch, scale, cx: 1 - lm[9].x, cy: lm[9].y }; // mirrored x (selfie view)
+}
+
+function drawHands(infos) {
+  const W = hv.videoWidth || 640, H = hv.videoHeight || 480;
+  if (hc.width !== W || hc.height !== H) { hc.width = W; hc.height = H; }
+  hctx.clearRect(0, 0, W, H);
+  infos.forEach(h => {
+    const col = h.fist ? '#ff7ad9' : h.pinch ? '#4cc9ff' : '#ffffff';
+    hctx.strokeStyle = col; hctx.fillStyle = col; hctx.lineWidth = 3; hctx.shadowColor = col; hctx.shadowBlur = 10;
+    CONNS.forEach(([a, b]) => {
+      hctx.beginPath(); hctx.moveTo(h.lm[a].x * W, h.lm[a].y * H); hctx.lineTo(h.lm[b].x * W, h.lm[b].y * H); hctx.stroke();
+    });
+    h.lm.forEach(p => { hctx.beginPath(); hctx.arc(p.x * W, p.y * H, 4, 0, 6.283); hctx.fill(); });
+  });
+}
+
+function processHands(hands) {
+  const infos = hands.map(analyse);
+  drawHands(infos);
+
+  if (!infos.length) {
+    HAND.prev = null; HAND.prevDist = null; HAND.pinching = false; HAND.engaged = false; HAND.visible = false;
+    hCursor.className = '';
+    setStatus('Show your hand');
+    return;
+  }
+  HAND.visible = true;
+  const open = infos.filter(h => !h.fist);
+  const fists = infos.filter(h => h.fist);
+  let cls = 'show', status = '<b>Open hand</b> · ready';
+  HAND.engaged = false;
+
+  if (infos.length === 2 && fists.length === 0) {
+    // two open hands: spread = zoom in, bring together = zoom out
+    const d = dist2({ x: infos[0].cx, y: infos[0].cy }, { x: infos[1].cx, y: infos[1].cy });
+    if (HAND.prevDist) {
+      const f = THREE.MathUtils.clamp(HAND.prevDist / d, 0.93, 1.07);
+      HAND.zoom *= Math.pow(f, 1.8);
+    }
+    HAND.prevDist = d; HAND.prev = null;
+    HAND.cx = (infos[0].cx + infos[1].cx) / 2; HAND.cy = (infos[0].cy + infos[1].cy) / 2;
+    HAND.engaged = true; cls += ' zoom'; status = '<b>Two hands</b> · zoom';
+  } else if (fists.length) {
+    // fist = grab the galaxy: move to rotate, push / pull to zoom
+    const h = fists[0];
+    HAND.prevDist = null;
+    if (HAND.prev) {
+      let dx = h.cx - HAND.prev.cx, dy = h.cy - HAND.prev.cy;
+      if (Math.abs(dx) < 0.0012) dx = 0;
+      if (Math.abs(dy) < 0.0012) dy = 0;
+      HAND.dTheta -= dx * 4.2;
+      HAND.dPhi -= dy * 3.2;
+      const r = THREE.MathUtils.clamp(HAND.prev.scale / h.scale, 0.95, 1.05);
+      HAND.zoom *= Math.pow(r, 1.5);
+    }
+    HAND.prev = { cx: h.cx, cy: h.cy, scale: h.scale };
+    HAND.cx = h.cx; HAND.cy = h.cy;
+    HAND.engaged = true; cls += ' grab'; status = '<b>Fist</b> · rotate / zoom';
+  } else {
+    HAND.prev = null; HAND.prevDist = null;
+    const h = open[0];
+    HAND.cx = h.cx; HAND.cy = h.cy;
+    const pinchNow = open.some(o => o.pinch);
+    if (pinchNow) {
+      cls += ' pinch'; status = '<b>Pinch</b> · pulse';
+      const now = performance.now();
+      if (!HAND.pinching && now - HAND.lastPulse > 700) { firePulse(); HAND.lastPulse = now; }
+    }
+    HAND.pinching = pinchNow;
+  }
+  if (!(fists.length === 0 && open.some(o => o.pinch))) HAND.pinching = false;
+
+  HAND.tx = HAND.cx * innerWidth;
+  HAND.ty = HAND.cy * innerHeight;
+  hCursor.className = cls;
+  setStatus(status);
+}
+
+function handUpdate() {
+  if (!HAND.on || !HAND.landmarker || hv.readyState < 2) return;
+  if (hv.currentTime !== HAND.lastT) {
+    HAND.lastT = hv.currentTime;
+    let res = null;
+    try { res = HAND.landmarker.detectForVideo(hv, performance.now()); } catch (_) { return; }
+    processHands((res && res.landmarks) || []);
+  }
+}
+
+// apply accumulated hand motion to the orbit camera, smoothed
+const _sph = new THREE.Spherical(), _off = new THREE.Vector3();
+function applyHand() {
+  const idle = Math.abs(HAND.dTheta) < 1e-5 && Math.abs(HAND.dPhi) < 1e-5 && Math.abs(HAND.zoom - 1) < 1e-4;
+  if (idle) { HAND.dTheta = HAND.dPhi = 0; HAND.zoom = 1; return; }
+  const k = 0.3;
+  _off.copy(camera.position).sub(controls.target);
+  _sph.setFromVector3(_off);
+  _sph.theta += HAND.dTheta * k;
+  _sph.phi = THREE.MathUtils.clamp(_sph.phi + HAND.dPhi * k, 0.12, Math.PI - 0.12);
+  _sph.radius = THREE.MathUtils.clamp(_sph.radius * Math.pow(HAND.zoom, k), controls.minDistance, controls.maxDistance);
+  HAND.dTheta *= (1 - k); HAND.dPhi *= (1 - k); HAND.zoom = Math.pow(HAND.zoom, 1 - k);
+  camera.position.copy(_off.setFromSpherical(_sph)).add(controls.target);
+}
+
+/* ===== Keyboard ===== */
+addEventListener('keydown', e => {
+  if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (k === 'h') toggleHand();
+  else if (k === 'r') toggleRotate();
+  else if (k >= '1' && k <= '4') goView(Object.keys(VIEWS)[+k - 1]);
+  else if (k === ' ') { e.preventDefault(); firePulse(); }
+});
+document.addEventListener('visibilitychange', () => { if (document.hidden && (HAND.on || HAND.loading)) stopHand(); });
+syncHandUI();
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+  bloom.setSize(innerWidth, innerHeight);
+});
+
+/* ---------- Loop ---------- */
+const clock = new THREE.Clock();
+const gMat = galaxy.userData.mat;
+const stars = scene.getObjectByName('stars');
+const speed = reduced ? 0.25 : 1;
+let curX = innerWidth / 2, curY = innerHeight / 2;
+
+function frame() {
+  const dt = Math.min(clock.getDelta(), 0.05) * speed;
+  const t = (frame.t = (frame.t || 0) + dt);
+
+  if (pulseActive) {
+    pulse += dt * 0.55;
+    if (pulse >= 1) { pulse = 0; pulseActive = false; }
+  }
+  const pulseEase = pulseActive ? Math.sin(Math.min(pulse, 1) * Math.PI) : 0;
+
+  gMat.uniforms.uTime.value = t;
+  gMat.uniforms.uPulse.value = pulseActive ? pulse : 0;
+  coreMat.uniforms.uTime.value = t;
+  coreMat.uniforms.uPulse.value = pulseEase;
+  halo.material.uniforms.uTime.value = t;
+
+  core.rotation.y = t * 0.12;
+  core.rotation.x = Math.sin(t * 0.2) * 0.2;
+  const breathe = 1 + Math.sin(t * 1.4) * 0.03 + pulseEase * 0.18;
+  core.scale.setScalar(breathe);
+  halo.scale.setScalar(breathe * (1 + pulseEase * 0.3));
+  shell.rotation.y = -t * 0.08; shell.rotation.x = t * 0.05;
+  galaxy.rotation.y = t * 0.02;
+  stars.rotation.y = t * 0.004;
+  rings.forEach((r, i) => { r.pivot.rotation.z = t * r.speed; r.group.rotation.y += dt * 0.05 * (i + 1); });
+
+  // hand input
+  handUpdate();
+  controls.autoRotate = autoRot && !HAND.engaged;
+  if (HAND.visible) {
+    curX += (HAND.tx - curX) * 0.35; curY += (HAND.ty - curY) * 0.35;
+    hCursor.style.transform = `translate(${curX}px, ${curY}px)`;
+  }
+
+  // camera: scripted flights, otherwise orbit controls (+ hands)
+  if (tween) {
+    HAND.dTheta = HAND.dPhi = 0; HAND.zoom = 1;
+    tween.t = Math.min(1, tween.t + dt / tween.dur);
+    const e = ease(tween.t);
+    camera.position.lerpVectors(tween.fp, tween.tp, e);
+    controls.target.lerpVectors(tween.ft, tween.tt, e);
+    camera.lookAt(controls.target);
+    if (tween.t >= 1) { const d = tween.done; tween = null; if (d) d(); }
+  } else {
+    if (controls.enabled) applyHand();
+    controls.update();
+  }
+
+  composer.render();
+  requestAnimationFrame(frame);
+}
+frame();
+setTimeout(() => flyTo(VIEWS.overview, 4.5, () => { controls.enabled = true; setActive('overview'); }), 500);
+requestAnimationFrame(() => requestAnimationFrame(() => loader.classList.add('done')));
+</script>
+</body>
+</html>
